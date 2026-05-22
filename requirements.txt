@@ -1,5 +1,6 @@
-python-telegram-bot==20.7
+python-telegram-bot==21.6
 yt-dlp
-flask
-pyrogram
 tgcrypto
+pyrogram
+TgCrypto
+ffmpeg-python
