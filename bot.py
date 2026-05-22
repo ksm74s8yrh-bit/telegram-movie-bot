@@ -453,7 +453,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             InlineKeyboardButton(
                 "🛑 إلغاء التحميل",
-                callback_data=f"cancel_{uid}"
+        data=f"cancel_{uid}"
             )
         ]
     ])
@@ -720,14 +720,19 @@ def build_app():
 
     app = (
 
-        Application.builder()
+    Application.builder()
 
-        .token(TOKEN)
+    .token(TOKEN)
 
-        .concurrent_updates(True)
+    .concurrent_updates(True)
 
-        .build()
-    )
+    .post_init(post_init)
+
+    .post_shutdown(post_shutdown)
+
+    .build()
+)
+    
 
     app.add_handler(
         CommandHandler("start", start)
