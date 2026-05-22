@@ -288,9 +288,17 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("📤 جاري الرفع...")
 
         if data == "mp3":
-            await pyro.send_audio(q.message.chat.id, path, title=title)
+            await context.bot.send_audio(
+    chat_id=q.message.chat_id,
+    audio=part,
+    title=title
+)
         else:
-            await pyro.send_video(q.message.chat.id, path, caption=title)
+            await context.bot.send_video(
+    chat_id=q.message.chat_id,
+    video=part,
+    caption=title
+)
 
         await q.edit_message_text(" تم بنجاح✅ ...تحياتي 🫡 أحمد قابل")
 
