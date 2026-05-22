@@ -247,7 +247,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             percent = int(downloaded / total * 100)
 
             asyncio.run_coroutine_threadsafe(
-                safe_edit(q.message, f"⬇️ {percent}%"),
+                safe_edit(q.message, f"⏳...جاري التحميل⬇️ {percent}%"),
                 loop
             )
 
@@ -283,21 +283,27 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.edit_message_text("❌ فشل التحميل")
             return
 
-        path = files[0]
+        for i, part in enumerate(parts, start=1):
 
-        await q.edit_message_text("📤 جاري الرفع...")
+    if cancel_event.is_set():
+        return
 
-        if data == "mp3":
-            await context.bot.send_audio(
-    chat_id=q.message.chat_id,
-    audio=part,
-    title=title
-)
-        else:
-            await context.bot.send_video(
-    chat_id=q.message.chat_id,
-    video=part,
-    caption=title
+    await safe_edit(
+        q.message,
+        f"📤 جاري الرفع {i}/{len(parts)}"
+    )
+
+    if data == "mp3":
+        await context.bot.send_audio(
+            chat_id=q.message.chat_id,
+            audio=part,
+            title=title
+        )
+    else:
+        await context.bot.send_video(
+            chat_id=q.message.chat_id,
+            video=part,
+            caption=title
 )
 
         await q.edit_message_text(" تم بنجاح✅ ...تحياتي 🫡 أحمد قابل")
