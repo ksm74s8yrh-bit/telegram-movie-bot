@@ -1,5 +1,5 @@
-python-telegram-bot==20.8
-pyrogram
-tgcrypto
-yt-dlp
-ffmpeg-python
+Flask==3.0.3
+python-telegram-bot==21.1.1
+pyrogram==2.0.10
+tgcrypto==1.2.5
+yt-dlp==2026.03.26
