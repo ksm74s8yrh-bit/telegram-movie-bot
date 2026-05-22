@@ -30,9 +30,9 @@ from pyrogram import Client as PyroClient
 
 # ================= CONFIG =================
 
-TOKEN ="8731635445:AAER_lUzaKC21xR31K3EXJN-zUk9t_cr-v4"
-API_ID ="39570484"
-API_HASH ="79114c616c581109bd61e7b991e595b5"
+TOKEN = "8731635445:AAER_lUzaKC21xR31K3EXJN-zUk9t_cr-v4"
+API_ID = "39570484"
+API_HASH = "79114c616c581109bd61e7b991e595b5"
 
 DOWNLOAD_DIR = "downloads"
 COOKIES_FILE = "yt_cookies.txt"
@@ -58,61 +58,35 @@ pyro = PyroClient(
 # ================= UTILS =================
 
 def make_bar(percent):
-
     filled = int(percent / 10)
-
     return "█" * filled + "░" * (10 - filled)
 
+
 async def safe_edit(msg, text, keyboard=None):
-
     try:
-
-        await msg.edit_text(
-            text,
-            reply_markup=keyboard
-        )
-
+        await msg.edit_text(text, reply_markup=keyboard)
     except:
         pass
 
+
 def get_video_info(url):
-
     ydl_opts = {
-
         "quiet": True,
         "noplaylist": True,
-
-        "cookiefile":
-        COOKIES_FILE
-        if os.path.exists(COOKIES_FILE)
-        else None,
+        "cookiefile": COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
 
-        info = ydl.extract_info(
-            url,
-            download=False
-        )
-
-        title = info.get(
-            "title",
-            "Unknown"
-        )
+        title = info.get("title", "Unknown")
 
         formats = []
-
         used = set()
 
         for f in info.get("formats", []):
-
             h = f.get("height")
-
-            size = (
-                f.get("filesize")
-                or
-                f.get("filesize_approx")
-            )
+            size = f.get("filesize") or f.get("filesize_approx")
 
             if not h or not size:
                 continue
@@ -123,143 +97,28 @@ def get_video_info(url):
             used.add(h)
 
             formats.append({
-
                 "height": h,
-
-                "size":
-                round(size / 1024 / 1024)
+                "size": round(size / 1024 / 1024)
             })
 
         return title, formats
 
-def get_meta(path):
-
-    result = subprocess.run(
-
-        [
-            "ffprobe",
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_format",
-            "-show_streams",
-            path
-        ],
-
-        stdout=subprocess.PIPE
-    )
-
-    try:
-
-        data = json.loads(result.stdout)
-
-        duration = int(float(
-            data["format"]["duration"]
-        ))
-
-        width = 0
-        height = 0
-
-        for s in data["streams"]:
-
-            if s["codec_type"] == "video":
-
-                width = s.get("width", 0)
-                height = s.get("height", 0)
-
-                break
-
-        return {
-
-            "duration": duration,
-            "width": width,
-            "height": height
-        }
-
-    except:
-
-        return {
-
-            "duration": 0,
-            "width": 0,
-            "height": 0
-        }
-
-def split_video(path, uid):
-
-    size = os.path.getsize(path)
-
-    if size <= MAX_UPLOAD_BYTES:
-        return [path]
-
-    output = os.path.join(
-        DOWNLOAD_DIR,
-        f"{uid}_part_%03d.mp4"
-    )
-
-    subprocess.run([
-
-        "ffmpeg",
-        "-i", path,
-        "-c", "copy",
-        "-map", "0",
-        "-f", "segment",
-        "-segment_time", "1800",
-        "-reset_timestamps", "1",
-        output
-
-    ])
-
-    parts = []
-
-    for f in sorted(os.listdir(DOWNLOAD_DIR)):
-
-        if f.startswith(uid + "_part_"):
-
-            parts.append(
-                os.path.join(DOWNLOAD_DIR, f)
-            )
-
-    return parts if parts else [path]
-
-def create_thumb(video):
-
-    thumb = video + ".jpg"
-
-    subprocess.run([
-
-        "ffmpeg",
-        "-y",
-        "-ss", "10",
-        "-i", video,
-        "-vframes", "1",
-        "-q:v", "2",
-        thumb
-
-    ])
-
-    return thumb if os.path.exists(thumb) else None
 
 def download_video(opts, url):
-
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
+
 
 # ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     await update.message.reply_text(
-
         "👋 أهلاً بيك في بوت التحميل...أحمد قابل\n\n"
-
         "📥 ابعت أي رابط فيديو\n"
         "🎬 يدعم أغلب المواقع\n"
-        "⚡ سريع جدًا\n"
-        "📦 يدعم تقسيم الملفات الكبيرة\n"
-        "🎧 تحميل MP3\n"
-        "❌ زر إلغاء أثناء التحميل"
-    
+        "⚡ سريع جدًا"
     )
+
 
 # ================= TEXT =================
 
@@ -272,25 +131,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["url"] = text
 
-    msg = await update.message.reply_text(
-        "🔍 جاري استخراج المعلومات..."
-    )
+    msg = await update.message.reply_text("🔍 جاري استخراج المعلومات...")
 
     try:
-
         title, formats = await asyncio.get_running_loop().run_in_executor(
-
             EXECUTOR,
-
             lambda: get_video_info(text)
         )
-
     except Exception as e:
-
-        await msg.edit_text(
-            f"❌ فشل استخراج الفيديو\n\n{e}"
-        )
-
+        await msg.edit_text(f"❌ خطأ في استخراج الفيديو\n{e}")
         return
 
     context.user_data["title"] = title
@@ -298,478 +147,186 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sizes = {}
 
     for f in formats:
-
         h = f["height"]
 
         if h >= 1080 and "1080" not in sizes:
             sizes["1080"] = f"{f['size']} MB"
-
         elif h >= 720 and "720" not in sizes:
             sizes["720"] = f"{f['size']} MB"
-
         elif h >= 480 and "480" not in sizes:
             sizes["480"] = f"{f['size']} MB"
 
     keyboard = [
-
         [
-
-            InlineKeyboardButton(
-                f"🎬 1080p • {sizes.get('1080', '?')}",
-                callback_data="1080"
-            ),
-
-            InlineKeyboardButton(
-                f"📺 720p • {sizes.get('720', '?')}",
-                callback_data="720"
-            )
+            InlineKeyboardButton(f"🎬 1080p • {sizes.get('1080','?')}", callback_data="1080"),
+            InlineKeyboardButton(f"📺 720p • {sizes.get('720','?')}", callback_data="720")
         ],
-
         [
-
-            InlineKeyboardButton(
-                f"📱 480p • {sizes.get('480', '?')}",
-                callback_data="480"
-            ),
-
-            InlineKeyboardButton(
-                "🎧 MP3",
-                callback_data="mp3"
-            )
+            InlineKeyboardButton(f"📱 480p • {sizes.get('480','?')}", callback_data="480"),
+            InlineKeyboardButton("🎧 MP3", callback_data="mp3")
         ],
-
         [
-
-            InlineKeyboardButton(
-                "⚡ أعلى جودة",
-                callback_data="best"
-            )
+            InlineKeyboardButton("⚡ أفضل جودة", callback_data="best")
         ]
     ]
 
     await msg.edit_text(
-
-        f"🎬 {title}\n\n"
-        "اختر الجودة:",
-
+        f"🎬 {title}\n\nاختر الجودة:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ================= BUTTONS =================
+
+# ================= CALLBACK =================
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     q = update.callback_query
-
     await q.answer()
 
-    # CANCEL
+    data = q.data
 
-    if q.data.startswith("cancel_"):
+    # ===== CANCEL =====
+    if data.startswith("cancel_"):
+        uid = data.replace("cancel_", "")
 
-        uid = q.data.replace("cancel_", "")
-
-        for user_id, data in ACTIVE_DOWNLOADS.items():
-
-            if data["uid"] == uid:
-
-                data["cancel"].set()
-
-                await q.edit_message_text(
-                    "❌ تم إلغاء التحميل"
-                )
-
+        for _, d in ACTIVE_DOWNLOADS.items():
+            if d["uid"] == uid:
+                d["cancel"].set()
+                await q.edit_message_text("❌ تم الإلغاء")
                 return
 
-    if q.data not in [
-        "1080",
-        "720",
-        "480",
-        "best",
-        "mp3"
-    ]:
+        await q.edit_message_text("❌ لم يتم العثور على التحميل")
         return
 
-    url = context.user_data["url"]
+    # ===== SAFE USER DATA =====
+    url = context.user_data.get("url")
+    title = context.user_data.get("title", "Video")
 
-    title = context.user_data.get(
-        "title",
-        "Video"
-    )
+    if not url:
+        await q.edit_message_text("⚠️ ابعت الرابط تاني الأول")
+        return
+
+    formats = {
+        "1080": ("bestvideo[height<=1080]+bestaudio/best[height<=1080]", "1080p"),
+        "720": ("bestvideo[height<=720]+bestaudio/best[height<=720]", "720p"),
+        "480": ("bestvideo[height<=480]+bestaudio/best[height<=480]", "480p"),
+        "best": ("bestvideo+bestaudio/best", "أفضل جودة"),
+        "mp3": ("bestaudio/best", "MP3")
+    }
+
+    if data not in formats:
+        await q.edit_message_text("⚠️ اختيار غير صحيح")
+        return
+
+    fmt, label = formats[data]
 
     uid = uuid.uuid4().hex
-
     cancel_event = Event()
 
     ACTIVE_DOWNLOADS[q.from_user.id] = {
-
         "uid": uid,
         "cancel": cancel_event
     }
 
-    formats = {
+    output = os.path.join(DOWNLOAD_DIR, f"{uid}.%(ext)s")
 
-        "1080":
-        (
-            "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-            "1080p"
-        ),
+    cancel_keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("❌ إلغاء", callback_data=f"cancel_{uid}")
+    ]])
 
-        "720":
-        (
-            "bestvideo[height<=720]+bestaudio/best[height<=720]",
-            "720p"
-        ),
-
-        "480":
-        (
-            "bestvideo[height<=480]+bestaudio/best[height<=480]",
-            "480p"
-        ),
-
-        "best":
-        (
-            "bestvideo+bestaudio/best",
-            "أفضل جودة"
-        ),
-
-        "mp3":
-        (
-            "bestaudio/best",
-            "MP3"
-        )
-    }
-
-    fmt, label = formats[q.data]
-
-    output = os.path.join(
-        DOWNLOAD_DIR,
-        f"{uid}.%(ext)s"
-    )
-
-    cancel_keyboard = InlineKeyboardMarkup([
-
-        [
-
-            InlineKeyboardButton(
-                "🛑 إلغاء التحميل",
-        data=f"cancel_{uid}"
-            )
-        ]
-    ])
-
-    await q.edit_message_text(
-
-        f"🎬 {title}\n\n"
-        f"⏳ جاري التحميل {label}",
-
-        reply_markup=cancel_keyboard
-    )
+    await q.edit_message_text(f"⏳ جاري التحميل {label}", reply_markup=cancel_keyboard)
 
     loop = asyncio.get_running_loop()
 
-    last_edit = {"t": 0}
-
     def hook(d):
-
         if cancel_event.is_set():
             raise Exception("Cancelled")
 
         if d["status"] == "downloading":
-
-            now = time.time()
-
-            if now - last_edit["t"] < 2:
-                return
-
-            last_edit["t"] = now
-
-            downloaded = d.get(
-                "downloaded_bytes",
-                0
-            )
-
-            total = (
-                d.get("total_bytes")
-                or
-                d.get("total_bytes_estimate")
-                or 1
-            )
-
-            percent = int(
-                downloaded / total * 100
-            )
-
-            speed = d.get("speed") or 0
-            eta = d.get("eta") or 0
-
-            speed_mb = speed / 1024 / 1024
-
-            d_mb = downloaded / 1024 / 1024
-            t_mb = total / 1024 / 1024
-
-            text = (
-
-                f"🎬 {title}\n\n"
-
-                f"⬇️ {label}\n\n"
-
-                f"{make_bar(percent)} {percent}%\n\n"
-
-                f"📦 {d_mb:.1f}/{t_mb:.1f} MB\n"
-
-                f"⚡ {speed_mb:.1f} MB/s\n"
-
-                f"⏳ {eta} ثانية"
-            )
+            downloaded = d.get("downloaded_bytes", 0)
+            total = d.get("total_bytes") or 1
+            percent = int(downloaded / total * 100)
 
             asyncio.run_coroutine_threadsafe(
-
-                safe_edit(
-                    q.message,
-                    text,
-                    cancel_keyboard
-                ),
-
+                safe_edit(q.message, f"⬇️ {percent}%"),
                 loop
             )
 
     ydl_opts = {
-
         "format": fmt,
-
         "outtmpl": output,
-
         "quiet": True,
-
         "noplaylist": True,
-
         "progress_hooks": [hook],
-
-        "merge_output_format": "mp4",
-
-        "retries": 10,
-
-        "fragment_retries": 10,
-
-        "socket_timeout": 30,
-
-        "concurrent_fragment_downloads": 16,
-
-        "cookiefile":
-        COOKIES_FILE
-        if os.path.exists(COOKIES_FILE)
-        else None,
-
-        "extractor_args": {
-            "youtube": {
-                "player_client": [
-                    "android",
-                    "ios",
-                    "web"
-                ]
-            }
-        },
-
-        "http_headers": {
-
-            "User-Agent":
-
-            "Mozilla/5.0"
-        }
+        "merge_output_format": "mp4"
     }
 
-    if q.data == "mp3":
-
-        ydl_opts["postprocessors"] = [
-
-            {
-
-                "key": "FFmpegExtractAudio",
-
-                "preferredcodec": "mp3",
-
-                "preferredquality": "192"
-            }
-        ]
+    if data == "mp3":
+        ydl_opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192"
+        }]
 
     try:
-
         await loop.run_in_executor(
-
             EXECUTOR,
-
-            lambda: download_video(
-                ydl_opts,
-                url
-            )
+            lambda: download_video(ydl_opts, url)
         )
 
-        files = []
-
-        for f in os.listdir(DOWNLOAD_DIR):
-
-            if f.startswith(uid):
-
-                files.append(
-                    os.path.join(DOWNLOAD_DIR, f)
-                )
+        files = [
+            os.path.join(DOWNLOAD_DIR, f)
+            for f in os.listdir(DOWNLOAD_DIR)
+            if f.startswith(uid)
+        ]
 
         if not files:
-
-            await q.edit_message_text(
-                "❌ فشل التحميل"
-            )
-
+            await q.edit_message_text("❌ فشل التحميل")
             return
 
         path = files[0]
 
-        gc.collect()
+        await q.edit_message_text("📤 جاري الرفع...")
 
-        parts = split_video(path, uid)
+        if data == "mp3":
+            await pyro.send_audio(q.message.chat.id, path, title=title)
+        else:
+            await pyro.send_video(q.message.chat.id, path, caption=title)
 
-        total_parts = len(parts)
-
-        for i, part in enumerate(parts, start=1):
-
-            if cancel_event.is_set():
-                return
-
-            meta = get_meta(part)
-
-            thumb = None
-
-            if q.data != "mp3":
-                thumb = create_thumb(part)
-
-            await safe_edit(
-
-                q.message,
-
-                f"📤 جاري الرفع\n"
-                f"الجزء {i}/{total_parts}"
-            )
-
-            if q.data == "mp3":
-
-                await pyro.send_audio(
-
-                    q.message.chat.id,
-
-                    part,
-
-                    title=title
-                )
-
-            else:
-
-                await pyro.send_video(
-
-                    q.message.chat.id,
-
-                    part,
-
-                    caption=title,
-
-                    duration=meta["duration"],
-
-                    width=meta["width"],
-
-                    height=meta["height"],
-
-                    thumb=thumb,
-
-                    supports_streaming=True
-                )
-
-        await safe_edit(
-
-            q.message,
-
-            f"تمت العملية بنجاح✅...تحياتي🫶🏻..أحمد قابل:\n{title}"
-        )
+        await q.edit_message_text(" تم بنجاح✅ ...تحياتي 🫡 أحمد قابل")
 
     except Exception as e:
-
-        await safe_edit(
-
-            q.message,
-
-            f"❌ خطأ:\n{str(e)[:500]}"
-        )
+        await q.edit_message_text(f"❌ خطأ: {str(e)[:400]}")
 
     finally:
+        ACTIVE_DOWNLOADS.pop(q.from_user.id, None)
 
-        ACTIVE_DOWNLOADS.pop(
-            q.from_user.id,
-            None
-        )
 
-# ================= MAIN =================
+# ================= APP =================
 
 async def post_init(app):
-
     await pyro.start()
 
 async def post_shutdown(app):
-
     await pyro.stop()
 
+
 def build_app():
+    app = Application.builder().token(TOKEN).build()
 
-    app = (
-
-    Application.builder()
-
-    .token(TOKEN)
-
-    .concurrent_updates(True)
-
-    .post_init(post_init)
-
-    .post_shutdown(post_shutdown)
-
-    .build()
-)
-    
-
-    app.add_handler(
-        CommandHandler("start", start)
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(buttons)
-    )
-
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            text_handler
-        )
-    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(buttons))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
     return app
 
+
 def main():
+    print("BOT RUNNING")
 
-    while True:
+    app = build_app()
+    app.run_polling(drop_pending_updates=True)
 
-        try:
-
-            print("BOT RUNNING")
-
-            app = build_app()
-
-            app.run_polling(
-                drop_pending_updates=True
-            )
-
-        except Exception as e:
-
-            print(e)
-
-            time.sleep(5)
 
 if __name__ == "__main__":
     main()
