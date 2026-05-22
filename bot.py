@@ -9,8 +9,6 @@ import gc
 from concurrent.futures import ThreadPoolExecutor
 
 import yt_dlp
-from flask import Flask, send_from_directory
-from threading import Thread, Event
 
 from telegram import (
     Update,
@@ -29,7 +27,6 @@ from pyrogram import Client as PyroClient
 
 # ========================= CONFIG =========================
 
-# تذكير: قم بتغيير التوكن والهاش إذا تم كشفهم علناً لسلامة بوتك وحسابك
 TOKEN = "8731635445:AAER_lUzaKC21xR31K3EXJN-zUk9t_cr-v4"
 API_ID = "39570484"
 API_HASH = "79114c616c581109bd61e7b991e595b5"
@@ -42,7 +39,7 @@ if not API_ID or not API_HASH:
 DOWNLOAD_DIR = "downloads"
 COOKIES_FILE = "yt_cookies.txt"
 
-MAX_UPLOAD_BYTES = 1900 * 1024 * 1024  # تم رفعها قليلاً لتناسب حد تليجرام الآمن
+MAX_UPLOAD_BYTES = 1900 * 1024 * 1024  # حد أقصى آمن لرفع الملفات (تليجرام عادي)
 
 EXECUTOR = ThreadPoolExecutor(max_workers=10)
 USER_SEMAPHORE = asyncio.Semaphore(6)
@@ -72,23 +69,6 @@ def clean_downloads():
 
 clean_downloads()
 
-# ========================= FLASK =========================
-
-flask_app = Flask(__name__)
-
-@flask_app.route('/ping')
-def ping():
-    return "ok"
-
-@flask_app.route('/file/<path:name>')
-def stream_file(name):
-    return send_from_directory(DOWNLOAD_DIR, name)
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=8080)
-
-Thread(target=run_flask, daemon=True).start()
-
 # ========================= UTILS =========================
 
 def make_bar(percent):
@@ -98,7 +78,7 @@ def make_bar(percent):
 async def safe_edit(msg, text, keyboard=None):
     try:
         await msg.edit_text(text, reply_markup=keyboard)
-    except Exception as e:
+    except:
         pass
 
 def get_video_info(url):
@@ -160,7 +140,6 @@ def split_video(path, uid):
     if duration <= 0:
         return [path]
 
-    # حساب عدد الأجزاء المطلوبة تقريبياً بناءً على الحجم
     num_parts = math.ceil(size / MAX_UPLOAD_BYTES)
     part_duration = math.ceil(duration / num_parts)
 
@@ -222,7 +201,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.user_data["title"] = title
     except Exception as e:
-        await msg.edit_text(f"❌ فشل جلب معلومات الرابط. تأكد من صحته أو جرب لاحقاً.\nالخطأ: {str(e)[:100]}")
+        await msg.edit_text(f"❌ فشل جلب معلومات الرابط. تأكد من صحته.\nالخطأ: {str(e)[:100]}")
         return
 
     sizes = {}
@@ -230,10 +209,8 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         h = f["height"]
         if h >= 1080 and "1080" not in sizes:
             sizes["1080"] = f"{f['size']:.0f} MB"
-            
         elif h >= 720 and "720" not in sizes:
             sizes["720"] = f"{f['size']:.0f} MB"
-            
         elif h >= 480 and "480" not in sizes:
             sizes["480"] = f"{f['size']:.0f} MB"
 
@@ -318,7 +295,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if d["status"] == "downloading":
             now = time.time()
-            if now - last_edit["t"] < 3:  # زيادة المهلة لـ 3 ثوانٍ لتجنب حظر تليجرام للـ Flood
+            if now - last_edit["t"] < 3:
                 return
             last_edit["t"] = now
 
@@ -341,7 +318,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"⚡ {speed_mb:.1f} MB/s\n"
                 f"⏳ الوقت المتبقي: {eta} ثانية"
             )
-            # استدعاء آمن متوافق مع الأسينك
             loop.call_soon_threadsafe(
                 asyncio.create_task, safe_edit(q.message, text, cancel_keyboard)
             )
@@ -352,7 +328,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "quiet": True,
         "noplaylist": True,
         "progress_hooks": [hook],
-        "concurrent_fragment_downloads": 16, # تخفيضها قليلاً للثبات
+        "concurrent_fragment_downloads": 16,
         "extractor_retries": 5,
         "retries": 10,
         "nocheckcertificate": True,
@@ -379,7 +355,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.edit_message_text("❌ فشل تحميل الملف من الخادم.")
             return
 
-        # فرز الملف الفعلي والابتعاد عن المخلفات
         path = files[0]
         for f in files:
             if f.endswith(".mp4") or f.endswith(".mp3"):
@@ -426,7 +401,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(q.message, f"❌ حدث خطأ غير متوقع:\n{str(e)[:300]}")
     finally:
         ACTIVE_DOWNLOADS.pop(q.from_user.id, None)
-        # تنظيف نهائي للملفات الخاصة بهذا الـ UID فقط لعدم مسح تحميلات مستخدمين آخرين
         for f in os.listdir(DOWNLOAD_DIR):
             if f.startswith(uid):
                 try: os.remove(os.path.join(DOWNLOAD_DIR, f))
@@ -463,7 +437,7 @@ def build_app():
 def main():
     while True:
         try:
-            print("=== BOT IS RUNNING NOW ===")
+            print("=== BOT IS RUNNING NOW (WITHOUT FLASK) ===")
             app = build_app()
             app.run_polling(drop_pending_updates=True)
         except Exception as e:
