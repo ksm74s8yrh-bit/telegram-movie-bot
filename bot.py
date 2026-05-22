@@ -207,13 +207,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     formats = {
-        "1080": ("bestvideo[height<=1080]+bestaudio/best[height<=1080]", "1080p"),
-        "720": ("bestvideo[height<=720]+bestaudio/best[height<=720]", "720p"),
-        "480": ("bestvideo[height<=480]+bestaudio/best[height<=480]", "480p"),
-        "best": ("bestvideo+bestaudio/best", "أفضل جودة"),
-        "mp3": ("bestaudio/best", "MP3")
-    }
-
+    "1080": ("best[height<=1080]", "1080p"),
+    "720": ("best[height<=720]", "720p"),
+    "480": ("best[height<=480]", "480p"),
+    "best": ("best", "أفضل جودة"),
+    "mp3": ("bestaudio/best", "MP3")
+}
     if data not in formats:
         await q.edit_message_text("⚠️ اختيار غير صحيح")
         return
