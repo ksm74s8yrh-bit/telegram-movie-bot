@@ -1,20 +1,15 @@
-# ========================= IMPORTS =========================
-
 import os
 import uuid
 import time
 import json
-import math
 import subprocess
 import asyncio
 import gc
 
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import yt_dlp
-
-from flask import Flask, send_from_directory
-from threading import Thread, Event
 
 from telegram import (
     Update,
@@ -33,17 +28,11 @@ from telegram.ext import (
 
 from pyrogram import Client as PyroClient
 
-# ========================= CONFIG =========================
+# ================= CONFIG =================
 
-TOKEN = "8731635445:AAER_lUzaKC21xR31K3EXJN-zUk9t_cr-v4"
-API_ID = "39570484"
-API_HASH = "79114c616c581109bd61e7b991e595b5"
-
-if not TOKEN:
-    raise ValueError("BOT_TOKEN missing")
-
-if not API_ID or not API_HASH:
-    raise ValueError("API_ID / API_HASH missing")
+TOKEN ="8731635445:AAER_lUzaKC21xR31K3EXJN-zUk9t_cr-v4"
+API_ID ="39570484"
+API_HASH ="79114c616c581109bd61e7b991e595b5"
 
 DOWNLOAD_DIR = "downloads"
 COOKIES_FILE = "yt_cookies.txt"
@@ -51,54 +40,22 @@ COOKIES_FILE = "yt_cookies.txt"
 MAX_UPLOAD_BYTES = 1700 * 1024 * 1024
 
 EXECUTOR = ThreadPoolExecutor(max_workers=6)
-USER_SEMAPHORE = asyncio.Semaphore(6)
 
 ACTIVE_DOWNLOADS = {}
 
-# ========================= PYROGRAM =========================
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# ================= PYROGRAM =================
 
 pyro = PyroClient(
     "bot_session",
     api_id=int(API_ID),
     api_hash=API_HASH,
     bot_token=TOKEN,
-    no_updates=True,
-    sleep_threshold=60,
+    no_updates=True
 )
 
-# ========================= CLEANUP =========================
-
-def clean_downloads():
-
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-    for f in os.listdir(DOWNLOAD_DIR):
-
-        try:
-            os.remove(os.path.join(DOWNLOAD_DIR, f))
-        except:
-            pass
-
-clean_downloads()
-
-# ========================= FLASK =========================
-
-flask_app = Flask(__name__)
-
-@flask_app.route('/ping')
-def ping():
-    return "ok"
-
-@flask_app.route('/file/<path:name>')
-def stream_file(name):
-    return send_from_directory(DOWNLOAD_DIR, name)
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=8080)
-
-Thread(target=run_flask, daemon=True).start()
-
-# ========================= UTILS =========================
+# ================= UTILS =================
 
 def make_bar(percent):
 
@@ -109,18 +66,26 @@ def make_bar(percent):
 async def safe_edit(msg, text, keyboard=None):
 
     try:
+
         await msg.edit_text(
             text,
             reply_markup=keyboard
         )
+
     except:
         pass
 
 def get_video_info(url):
 
     ydl_opts = {
+
         "quiet": True,
-        "noplaylist": True
+        "noplaylist": True,
+
+        "cookiefile":
+        COOKIES_FILE
+        if os.path.exists(COOKIES_FILE)
+        else None,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -130,38 +95,39 @@ def get_video_info(url):
             download=False
         )
 
-        title = info.get("title", "Unknown")
+        title = info.get(
+            "title",
+            "Unknown"
+        )
 
         formats = []
 
-        seen = set()
+        used = set()
 
         for f in info.get("formats", []):
 
-            height = f.get("height")
+            h = f.get("height")
 
-            filesize = (
+            size = (
                 f.get("filesize")
                 or
                 f.get("filesize_approx")
             )
 
-            if not height:
+            if not h or not size:
                 continue
 
-            if not filesize:
+            if h in used:
                 continue
 
-            if height in seen:
-                continue
-
-            seen.add(height)
-
-            size_mb = filesize / 1024 / 1024
+            used.add(h)
 
             formats.append({
-                "height": height,
-                "size": size_mb
+
+                "height": h,
+
+                "size":
+                round(size / 1024 / 1024)
             })
 
         return title, formats
@@ -169,6 +135,7 @@ def get_video_info(url):
 def get_meta(path):
 
     result = subprocess.run(
+
         [
             "ffprobe",
             "-v", "quiet",
@@ -177,6 +144,7 @@ def get_meta(path):
             "-show_streams",
             path
         ],
+
         stdout=subprocess.PIPE
     )
 
@@ -185,15 +153,15 @@ def get_meta(path):
         data = json.loads(result.stdout)
 
         duration = int(float(
-            data.get("format", {}).get("duration", 0)
+            data["format"]["duration"]
         ))
 
         width = 0
         height = 0
 
-        for s in data.get("streams", []):
+        for s in data["streams"]:
 
-            if s.get("codec_type") == "video":
+            if s["codec_type"] == "video":
 
                 width = s.get("width", 0)
                 height = s.get("height", 0)
@@ -201,6 +169,7 @@ def get_meta(path):
                 break
 
         return {
+
             "duration": duration,
             "width": width,
             "height": height
@@ -209,6 +178,7 @@ def get_meta(path):
     except:
 
         return {
+
             "duration": 0,
             "width": 0,
             "height": 0
@@ -221,23 +191,25 @@ def split_video(path, uid):
     if size <= MAX_UPLOAD_BYTES:
         return [path]
 
-    parts = []
-
-    output_pattern = os.path.join(
+    output = os.path.join(
         DOWNLOAD_DIR,
         f"{uid}_part_%03d.mp4"
     )
 
     subprocess.run([
+
         "ffmpeg",
         "-i", path,
         "-c", "copy",
         "-map", "0",
-        "-fs", str(MAX_UPLOAD_BYTES),
         "-f", "segment",
+        "-segment_time", "1800",
         "-reset_timestamps", "1",
-        output_pattern
+        output
+
     ])
+
+    parts = []
 
     for f in sorted(os.listdir(DOWNLOAD_DIR)):
 
@@ -249,11 +221,12 @@ def split_video(path, uid):
 
     return parts if parts else [path]
 
-def thumbnail(video):
+def create_thumb(video):
 
     thumb = video + ".jpg"
 
     subprocess.run([
+
         "ffmpeg",
         "-y",
         "-ss", "10",
@@ -261,68 +234,64 @@ def thumbnail(video):
         "-vframes", "1",
         "-q:v", "2",
         thumb
+
     ])
 
     return thumb if os.path.exists(thumb) else None
 
-def do_download(opts, url):
+def download_video(opts, url):
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
 
-# ========================= START =========================
+# ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    keyboard = [
-
-        [
-            InlineKeyboardButton(
-                "🎬 تحميل فيديو",
-                callback_data="video"
-            )
-        ],
-
-        [
-            InlineKeyboardButton(
-                "🎧 تحميل MP3",
-                callback_data="audio"
-            )
-        ]
-    ]
-
     await update.message.reply_text(
-        "👋 أهلاً بيك في بوت التحميل...أحمد قابل \n\n"
+
+        "👋 أهلاً بيك في بوت التحميل...أحمد قابل\n\n"
+
         "📥 ابعت أي رابط فيديو\n"
         "🎬 يدعم أغلب المواقع\n"
-        "⚡سريع و فعال\n"
-        "📦 تقسيم تلقائي للفيديوهات الكبيرة",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "⚡ سريع جدًا\n"
+        "📦 يدعم تقسيم الملفات الكبيرة\n"
+        "🎧 تحميل MP3\n"
+        "❌ زر إلغاء أثناء التحميل"
+        "إبعت رابط الفيديو دلوقتي ⬇️⬇️\n"
     )
 
-# ========================= TEXT HANDLER =========================
+# ================= TEXT =================
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text.strip()
 
-    if not (
-        text.startswith("http://")
-        or
-        text.startswith("https://")
-    ):
+    if not text.startswith("http"):
         return
 
     context.user_data["url"] = text
 
     msg = await update.message.reply_text(
-        "🔍 جاري استخراج معلومات الفيديو..."
+        "🔍 جاري استخراج المعلومات..."
     )
 
-    title, formats = await asyncio.get_running_loop().run_in_executor(
-        EXECUTOR,
-        lambda: get_video_info(text)
-    )
+    try:
+
+        title, formats = await asyncio.get_running_loop().run_in_executor(
+
+            EXECUTOR,
+
+            lambda: get_video_info(text)
+        )
+
+    except Exception as e:
+
+        await msg.edit_text(
+            f"❌ فشل استخراج الفيديو\n\n{e}"
+        )
+
+        return
 
     context.user_data["title"] = title
 
@@ -333,17 +302,18 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         h = f["height"]
 
         if h >= 1080 and "1080" not in sizes:
-            sizes["1080"] = f"{f['size']:.0f} MB"
+            sizes["1080"] = f"{f['size']} MB"
 
         elif h >= 720 and "720" not in sizes:
-            sizes["720"] = f"{f['size']:.0f} MB"
+            sizes["720"] = f"{f['size']} MB"
 
         elif h >= 480 and "480" not in sizes:
-            sizes["480"] = f"{f['size']:.0f} MB"
+            sizes["480"] = f"{f['size']} MB"
 
     keyboard = [
 
         [
+
             InlineKeyboardButton(
                 f"🎬 1080p • {sizes.get('1080', '?')}",
                 callback_data="1080"
@@ -356,6 +326,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
 
         [
+
             InlineKeyboardButton(
                 f"📱 480p • {sizes.get('480', '?')}",
                 callback_data="480"
@@ -368,6 +339,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
 
         [
+
             InlineKeyboardButton(
                 "⚡ أعلى جودة",
                 callback_data="best"
@@ -376,11 +348,14 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await msg.edit_text(
-        f"🎬 {title}\n\nاختر الجودة:",
+
+        f"🎬 {title}\n\n"
+        "اختر الجودة:",
+
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ========================= BUTTONS =========================
+# ================= BUTTONS =================
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -400,11 +375,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 data["cancel"].set()
 
-                task = data.get("task")
-
-                if task and not task.done():
-                    task.cancel()
-
                 await q.edit_message_text(
                     "❌ تم إلغاء التحميل"
                 )
@@ -415,47 +385,51 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "1080",
         "720",
         "480",
-        "mp3",
-        "best"
+        "best",
+        "mp3"
     ]:
         return
 
-    url = context.user_data.get("url")
-    title = context.user_data.get("title", "Video")
+    url = context.user_data["url"]
+
+    title = context.user_data.get(
+        "title",
+        "Video"
+    )
 
     uid = uuid.uuid4().hex
 
     cancel_event = Event()
 
     ACTIVE_DOWNLOADS[q.from_user.id] = {
+
         "uid": uid,
-        "cancel": cancel_event,
-        "task": None
+        "cancel": cancel_event
     }
 
-    quality_map = {
+    formats = {
 
         "1080":
         (
-            "bestvideo[vcodec^=avc][height<=1080]+bestaudio/best[height<=1080]",
+            "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
             "1080p"
         ),
 
         "720":
         (
-            "bestvideo[vcodec^=avc][height<=720]+bestaudio/best[height<=720]",
+            "bestvideo[height<=720]+bestaudio/best[height<=720]",
             "720p"
         ),
 
         "480":
         (
-            "bestvideo[vcodec^=avc][height<=480]+bestaudio/best[height<=480]",
+            "bestvideo[height<=480]+bestaudio/best[height<=480]",
             "480p"
         ),
 
         "best":
         (
-            "bestvideo[vcodec^=avc]+bestaudio/best",
+            "bestvideo+bestaudio/best",
             "أفضل جودة"
         ),
 
@@ -466,7 +440,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     }
 
-    fmt, label = quality_map[q.data]
+    fmt, label = formats[q.data]
 
     output = os.path.join(
         DOWNLOAD_DIR,
@@ -474,18 +448,21 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     cancel_keyboard = InlineKeyboardMarkup([
+
         [
+
             InlineKeyboardButton(
-                "❌ إلغاء التحميل",
+                "🛑 إلغاء التحميل",
                 callback_data=f"cancel_{uid}"
             )
         ]
     ])
 
     await q.edit_message_text(
+
         f"🎬 {title}\n\n"
-        f"⏳ جاري التحميل {label}\n"
-        f"░░░░░░░░░░ 0%",
+        f"⏳ جاري التحميل {label}",
+
         reply_markup=cancel_keyboard
     )
 
@@ -516,8 +493,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 d.get("total_bytes")
                 or
                 d.get("total_bytes_estimate")
-                or
-                1
+                or 1
             )
 
             percent = int(
@@ -527,28 +503,34 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             speed = d.get("speed") or 0
             eta = d.get("eta") or 0
 
-            speed_mb = speed / 1024 / 1024 if speed else 0
+            speed_mb = speed / 1024 / 1024
 
-            downloaded_mb = downloaded / 1024 / 1024
-            total_mb = total / 1024 / 1024
-
-            bar = make_bar(percent)
+            d_mb = downloaded / 1024 / 1024
+            t_mb = total / 1024 / 1024
 
             text = (
+
                 f"🎬 {title}\n\n"
-                f"⬇️ جاري التحميل {label}\n\n"
-                f"{bar} {percent}%\n\n"
-                f"📦 {downloaded_mb:.1f} / {total_mb:.1f} MB\n"
+
+                f"⬇️ {label}\n\n"
+
+                f"{make_bar(percent)} {percent}%\n\n"
+
+                f"📦 {d_mb:.1f}/{t_mb:.1f} MB\n"
+
                 f"⚡ {speed_mb:.1f} MB/s\n"
+
                 f"⏳ {eta} ثانية"
             )
 
             asyncio.run_coroutine_threadsafe(
+
                 safe_edit(
                     q.message,
                     text,
                     cancel_keyboard
                 ),
+
                 loop
             )
 
@@ -564,42 +546,64 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         "progress_hooks": [hook],
 
-        "concurrent_fragment_downloads": 32,
-
-        "extractor_retries": 5,
+        "merge_output_format": "mp4",
 
         "retries": 10,
 
         "fragment_retries": 10,
 
-        "nocheckcertificate": True,
-
         "socket_timeout": 30,
+
+        "concurrent_fragment_downloads": 16,
+
+        "cookiefile":
+        COOKIES_FILE
+        if os.path.exists(COOKIES_FILE)
+        else None,
+
+        "extractor_args": {
+            "youtube": {
+                "player_client": [
+                    "android",
+                    "ios",
+                    "web"
+                ]
+            }
+        },
+
+        "http_headers": {
+
+            "User-Agent":
+
+            "Mozilla/5.0"
+        }
     }
 
     if q.data == "mp3":
 
-        ydl_opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }]
+        ydl_opts["postprocessors"] = [
 
-    else:
+            {
 
-        ydl_opts["merge_output_format"] = "mp4"
+                "key": "FFmpegExtractAudio",
+
+                "preferredcodec": "mp3",
+
+                "preferredquality": "192"
+            }
+        ]
 
     try:
 
-        async with USER_SEMAPHORE:
+        await loop.run_in_executor(
 
-            await loop.run_in_executor(
-                EXECUTOR,
-                lambda: do_download(
-                    ydl_opts,
-                    url
-                )
+            EXECUTOR,
+
+            lambda: download_video(
+                ydl_opts,
+                url
             )
+        )
 
         files = []
 
@@ -614,7 +618,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not files:
 
             await q.edit_message_text(
-                "‼️فشل التحميل‼️"
+                "❌ فشل التحميل"
             )
 
             return
@@ -637,59 +641,62 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             thumb = None
 
             if q.data != "mp3":
-                thumb = thumbnail(part)
+                thumb = create_thumb(part)
 
             await safe_edit(
+
                 q.message,
-                f"🎬 {title}\n\n"
+
                 f"📤 جاري الرفع\n"
                 f"الجزء {i}/{total_parts}"
             )
 
-            async def upload():
+            if q.data == "mp3":
 
-                if q.data == "mp3":
+                await pyro.send_audio(
 
-                    await pyro.send_audio(
-                        q.message.chat.id,
-                        part,
-                        title=title
-                    )
+                    q.message.chat.id,
 
-                else:
+                    part,
 
-                    await pyro.send_video(
-                        q.message.chat.id,
-                        part,
-                        caption=title,
-                        duration=meta["duration"],
-                        width=meta["width"],
-                        height=meta["height"],
-                        thumb=thumb,
-                        supports_streaming=True
-                    )
+                    title=title
+                )
 
-            task = asyncio.create_task(
-                upload()
-            )
+            else:
 
-            ACTIVE_DOWNLOADS[q.from_user.id]["task"] = task
+                await pyro.send_video(
 
-            await task
+                    q.message.chat.id,
 
-            if thumb and os.path.exists(thumb):
-                os.remove(thumb)
+                    part,
+
+                    caption=title,
+
+                    duration=meta["duration"],
+
+                    width=meta["width"],
+
+                    height=meta["height"],
+
+                    thumb=thumb,
+
+                    supports_streaming=True
+                )
 
         await safe_edit(
+
             q.message,
-            f"تمت العملية بنجاح ✅ تحياتي✨...أحمد قابل:\n{title}"
+
+            f"تمت العملية بنجاح✅...تحياتي🫶🏻..أحمد قابل:\n{title}"
         )
 
     except Exception as e:
 
         await safe_edit(
+
             q.message,
-            f"❌ خطأ:\n{str(e)[:300]}"
+
+            f"❌ خطأ:\n{str(e)[:500]}"
         )
 
     finally:
@@ -699,21 +706,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             None
         )
 
-        for f in os.listdir(DOWNLOAD_DIR):
-
-            if f.startswith(uid):
-
-                try:
-                    os.remove(
-                        os.path.join(
-                            DOWNLOAD_DIR,
-                            f
-                        )
-                    )
-                except:
-                    pass
-
-# ========================= MAIN =========================
+# ================= MAIN =================
 
 async def post_init(app):
 
@@ -726,15 +719,13 @@ async def post_shutdown(app):
 def build_app():
 
     app = (
+
         Application.builder()
-        .concurrent_updates(True)
+
         .token(TOKEN)
-        .connect_timeout(30)
-        .read_timeout(30)
-        .write_timeout(60)
-        .pool_timeout(15)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
+
+        .concurrent_updates(True)
+
         .build()
     )
 
